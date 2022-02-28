@@ -16,7 +16,6 @@ class Pet(models.Model):
 
 
 
-
 """ Django Rest Framework """
 
 class Product(models.Model):
