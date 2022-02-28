@@ -10,3 +10,4 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = ["id","category",'slug',"title","description","regular_price","discount_price"]               # in fields we define data that we want to collect
 
+
