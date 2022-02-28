@@ -203,13 +203,13 @@ using the core graphene mutation features to add custom mutations to a Django pr
 
             * Form Validation
 
-                             Form mutations will call is_valid() on your forms.
+                             Form mutations will call "is_valid()" on your forms.
 
-                             If the form is valid then the class method perform_mutate(form, info) is called on the mutation.
+                             If the form is valid then the class method "perform_mutate(form, info)" is called on the mutation.
                               Override this method to change how the form is saved or to return a different Graphene object type.
 
                              If the form is not valid then a list of errors will be returned. These errors have two fields:
-                             field, a string containing the name of the invalid form field, and messages, a list of strings with the validation messages.
+                             field, a string containing the name of the invalid form field, and "messages", a list of strings with the validation messages.
 
 
 
@@ -252,10 +252,10 @@ using the core graphene mutation features to add custom mutations to a Django pr
             3.1) Create/Update Operations
 
                             By default ModelSerializers accept create and update operations. To customize this use the
-                             model_operations attribute on the SerializerMutation class.
+                             model_operations attribute on the "SerializerMutation" class.
 
                             The update operation looks up models by the primary key by default. You can customize the
-                            look up with the lookup_field attribute on the SerializerMutation class.
+                            look up with the "lookup_field" attribute on the "SerializerMutation" class.
 
                                 """"
                                     class MyProductMutation(SerializerMutation):
@@ -300,17 +300,51 @@ using the core graphene mutation features to add custom mutations to a Django pr
                                                 slug
                                               }
                                             }
+                                        """"
 
+            3.2) Overriding Update Queries
+
+                            Use the method "get_serializer_kwargs" to override how updates are applied.
+
+                                            """"
+                                                class MyProductMutationOverriding(SerializerMutation):
+                                                    class Meta:
+                                                        serializer_class = ProductSerializer
+
+                                                    @classmethod
+                                                    def get_serializer_kwargs(cls, root, info, **input):
+                                                        if 'id' in input:
+                                                            instance = Product.objects.filter(
+                                                                id=input['id'],
+                                                            ).first()
+                                                            if instance:
+                                                                return {'instance': instance, 'data': input, 'partial': True}
+
+                                                            else:
+                                                                raise http.Http404
+
+                                                        return {'data': input, 'partial': True}
+                                            """"
+
+                                      (run query)
+                                            """"
+                                                mutation{
+                                                     myProductMutationOverriding(input:{id:2,slug:"abc",
+                                                                    category:"xyz",regularPrice:120,title:"kjchdw",discountPrice:111}){
+                                                        category
+                                                      }
+                                                    }
+                                            """"
 
 4) Relay (similar to add new category class)
 
             Most APIs don’t just allow you to read data, they also allow you to write.
 
             In GraphQL, this is done using mutations. Just like queries, Relay puts some additional requirements on mutations,
-             but Graphene nicely manages that for you. All you need to do is make your mutation a subclass of relay.ClientIDMutation.
+             but Graphene nicely manages that for you. All you need to do is make your mutation a subclass of "relay.ClientIDMutation".
 
-            You can use relay with mutations. A Relay mutation must inherit from ClientIDMutation and implement
-            the mutate_and_get_payload method:
+            You can use relay with mutations. A Relay mutation must inherit from "ClientIDMutation" and implement
+            the "mutate_and_get_payload" method:
 
                             """"
                                 from graphene import relay
@@ -331,42 +365,12 @@ using the core graphene mutation features to add custom mutations to a Django pr
                                         return CategoryMutationAdd(category=category)
                             """"
 
-            Notice that the class Arguments is renamed to class Input with relay. This is due to a deprecation of class
+            Notice that the "class Arguments" is renamed to "class Input" with relay. This is due to a deprecation of class
              Arguments in graphene 2.0.
 
-            Relay ClientIDMutation accept a clientIDMutation argument. This argument is also sent back to the client with the
+            Relay ClientIDMutation accept a "clientIDMutation" argument. This argument is also sent back to the client with the
             mutation result (you do not have to do anything). For services that manage a pool of many GraphQL requests in bulk,
-            the clientIDMutation allows you to match up a specific mutation with the response.
-
-
-
-
-
-
-
-
-
-
-
-
-
-mutation{
- myProductMutationOverriding(input:{id:2,slug:"abc",
-  				category:"xyz",regularPrice:120,title:"kjchdw",discountPrice:111}){
-    category
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
+            the "clientIDMutation" allows you to match up a specific mutation with the response.
 
 
 
@@ -402,5 +406,168 @@ mutation{
 
             Django gives you a few ways to control how database transactions are managed.
 
-            * Tying transactions to HTTP requests¶
+            * Tying transactions to HTTP requests
+
+                        A common way to handle transactions in Django is to wrap each request in a transaction.
+                        Set "ATOMIC_REQUESTS" settings to "True" in the configuration of each database for which you want
+                        to enable this behavior.
+
+                        It works like this. Before calling "GraphQLView" Django starts a transaction. If the response is
+                        produced without problems, Django commits the transaction. If the view, a "DjangoFormMutation" or a
+                        "DjangoModelFormMutation" produces an exception, Django rolls back the transaction.
+
+                        WARNING
+
+                        While the simplicity of this transaction model is appealing, it also makes it inefficient when traffic
+                        increases. Opening a transaction for every request has some overhead. The impact on performance depends
+                        on the query patterns of your application and on how well your database handles locking.
+
+
+                        ( Check the next section for a better solution. )
+
+            * Tying transactions to mutations
+
+                        A mutation can contain multiple fields, just like a query. There’s one important distinction between
+                        queries and mutations, other than the name:
+
+                                  " While query fields are executed in parallel, mutation fields run in series, one after the other. "
+
+                        This means that if we send two "incrementCredits" mutations in one request, the first is guaranteed to
+                        finish before the second begins, ensuring that we don’t end up with a race condition with ourselves.
+
+                        On the other hand, if the first "incrementCredits" runs successfully but the second one does not, the
+                        operation cannot be retried as it is. That’s why is a good idea to run all mutation fields in a transaction,
+                        to guarantee all occur or nothing occurs.
+
+                        To enable this behavior for all databases set the graphene "ATOMIC_MUTATIONS" settings to "True" in your settings file:
+
+                                    """"
+                                        GRAPHENE = {
+                                            "ATOMIC_MUTATIONS": True,
+                                        }
+                                    """"
+
+                        On the contrary, if you want to enable this behavior for a specific database, set "ATOMIC_MUTATIONS" to "True"
+                         in your database settings:
+
+                                    """"
+                                        DATABASES = {
+                                            "default": {
+                                                "ATOMIC_MUTATIONS": True,
+                                            },
+                                        }
+                                    """"
+
+                         Now, given the following example mutation:
+
+                                    """"
+                                        mutation IncreaseCreditsTwice {
+
+                                            increaseCredits1: increaseCredits(input: { amount: 10 }) {
+                                                balance
+                                                errors {
+                                                    field
+                                                    messages
+                                                }
+                                            }
+
+                                            increaseCredits2: increaseCredits(input: { amount: -1 }) {
+                                                balance
+                                                errors {
+                                                    field
+                                                    messages
+                                                }
+                                            }
+
+                                        }
+                                    """"
+
+                         The server is going to return something like:
+
+                                    """"
+                                        {
+                                            "data": {
+                                                "increaseCredits1": {
+                                                    "balance": 10.0,
+                                                    "errors": []
+                                                },
+                                                "increaseCredits2": {
+                                                    "balance": null,
+                                                    "errors": [
+                                                        {
+                                                            "field": "amount",
+                                                            "message": "Amount should be a positive number"
+                                                        }
+                                                    ]
+                                                },
+                                            }
+                                        }
+                                    """"
+
+                         But the balance will remain the same.
+
+
+
+
+
+
+-----------------------------------------------------------------------------------------------------------------------------------
+
+SUBSCRIPTIONS
+
+           The "graphene-django" project does not currently support GraphQL subscriptions out of the box. However, there are
+           several community-driven modules for adding subscription support, and the provided GraphiQL interface supports
+           running subscription operations over a websocket.
+
+
+           To implement websocket-based support for GraphQL subscriptions, you’ll need to do the following:
+
+                        1) Install and configure django-channels.
+                        2) Install and configure* a third-party module for adding subscription support over websockets.
+                            A few options include:
+
+                                        * graphql-python/graphql-ws
+                                        * datavance/django-channels-graphql-ws
+                                        * jaydenwindle/graphene-subscriptions
+
+                        3) Ensure that your application (or at least your GraphQL endpoint) is being served via an ASGI protocol
+                        server like 'daphne' (built in to django-channels), 'uvicorn', or 'hypercorn'.
+
+                        * Note: By default, the GraphiQL interface that comes with graphene-django assumes that you are handling
+                        subscriptions at the same path as any other operation (i.e., you configured both urls.py and routing.py to handle
+                        GraphQL operations at the same path, like /graphql).
+
+                        If these URLs differ, GraphiQL will try to run your subscription over HTTP, which will produce an error.
+                        If you need to use a different URL for handling websocket connections, you can configure "SUBSCRIPTION_PATH"
+                         in your settings.py:
+
+                                    """"
+                                        GRAPHENE = {
+                                            # ...
+                                            "SUBSCRIPTION_PATH": "/ws/graphql"  # The path you configured in `routing.py`, including a leading slash.
+                                        }
+                                    """"
+
+
+                         Once your application is properly configured to handle subscriptions, you can use the GraphiQL interface to test subscriptions like any other operation.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
