@@ -128,23 +128,38 @@
                         """"
 
 
+4) Filtering ID-based Node Access
 
-
-	modified:   Mutations/app/views.py
-
-
-
+                In order to add authorization to id-based node access, we need to add a method to your "DjangoObjectType".
 
 
 
 
 
+5) Adding Login Required
+
+                To restrict users from accessing the GraphQL API page the standard Django "LoginRequiredMixin" can be used
+                to create your own standard Django Class Based View, which includes the "LoginRequiredMixin" and subclasses
+                the "GraphQLView".
+
+                ( this will restrict user to access graphql site if user is not logged into admin ste )
 
 
+                * app/views.py
 
+                            """"
+                                from django.contrib.auth.mixins import LoginRequiredMixin
+                                from graphene_django.views import GraphQLView
 
+                                class PrivateGraphQLView(LoginRequiredMixin, GraphQLView):
+                                    pass
+                            """"
 
+                * update url
 
+                            """ path("graphql",PrivateGraphQLView.as_view(graphiql=True)), """
 
+                            or
 
+                            """ path('graphql', PrivateGraphQLView.as_view(graphiql=True, schema=schema)), """
 
