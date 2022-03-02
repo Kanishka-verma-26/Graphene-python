@@ -4,6 +4,7 @@ from graphene import ObjectType
 from graphene_django.filter import DjangoFilterConnectionField
 from graphene_django.types import DjangoObjectType
 from .models import Post
+from graphene_django.debug import DjangoDebug
 
 """ schema to print all posts that got published """
 class PostNode(DjangoObjectType):
@@ -36,7 +37,7 @@ class PostIDBasedNodeAccess(DjangoObjectType):
         fields = '__all__'
         interfaces = (relay.Node,)
         filter_fields = ["title", "content","id"]
-        print("hello")
+
 
 
 
@@ -47,7 +48,7 @@ class Query(ObjectType):
     my_posts = DjangoFilterConnectionField(PostNode)        #  User-based Queryset Filtering
     all_posts_global_filtering = DjangoFilterConnectionField(PostNodeGlobalFiltering)           # Global_filtering
     post_ID_based_node_access = DjangoFilterConnectionField(PostIDBasedNodeAccess)          #Post ID Based Node Access
-    # debug = graphene.Field(DjangoDebug,name ='_debug')
+    debug = graphene.Field(DjangoDebug,name ='_debug')
 
     def resolve_all_posts(self, info):
          return Post.objects.filter(published=True)
@@ -60,18 +61,13 @@ class Query(ObjectType):
         else:
             return Post.objects.filter(owner=info.context.user)
 
-    def resolve_post_ID_based_node_access(cls,self,**kwargs):
+    def resolve_post_ID_based_node_access(self,info,**kwargs):
         print("inside def")
         print(kwargs)
         id = kwargs.get('id')
-        try:
-            post = Post.objects.get(id=id)
-            print("inside try")
-        except Post.DoesNotExist:
-            return None
 
-        if post.published or info.context.user.is_superuser:
-            return post
+        if info.context.user.is_authenticated:
+            return Post.objects.filter(owner=info.context.user,published=True)
         return None
 
 
